@@ -1,0 +1,23 @@
+# Build outputs
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+*.coverage
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS detritus
+.DS_Store
+Thumbs.db
+
+# Local config
+.env
+.env.*
+.envrc
