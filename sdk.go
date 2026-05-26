@@ -14,16 +14,14 @@
 package interpose
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/interposehq/interpose/pkg/aauth"
+	aauthclient "github.com/interposehq/interpose/pkg/aauth/client"
 )
 
 // DefaultAddr is the address the SDK connects to when neither WithAddr
@@ -33,10 +31,15 @@ const DefaultAddr = "127.0.0.1:7421"
 // Client connects to a local interpose daemon and requests permission
 // for agent actions. One Client per agent process; safe for concurrent
 // use across goroutines.
+//
+// Under the hood, Client delegates to interpose's pkg/aauth/client which
+// implements the full AAuth wire protocol: ed25519 agent token minting,
+// Signature-Key header, RFC 9421 HTTP Message Signatures, Content-Digest.
+// The SDK exposes a small, opinionated API on top of that ceremony so
+// agent code never has to think about JWTs or signatures.
 type Client struct {
-	addr  string
-	agent *aauth.Agent
-	http  *http.Client
+	aac *aauthclient.Client
+	pid int
 }
 
 // Option configures a Client. See WithAddr, WithHTTPClient, WithTimeout.
@@ -45,7 +48,7 @@ type Option func(*Client)
 // WithAddr overrides the daemon address (host:port form). Precedence:
 // explicit WithAddr > INTERPOSE_ADDR env var > DefaultAddr.
 func WithAddr(addr string) Option {
-	return func(c *Client) { c.addr = addr }
+	return func(c *Client) { c.aac.PSBase = "http://" + addr }
 }
 
 // WithHTTPClient injects a custom http.Client. Useful for tests, custom
@@ -53,17 +56,17 @@ func WithAddr(addr string) Option {
 // minute timeout — long enough to wait for a hardware-authenticator
 // touch but short enough to detect a dead broker.
 func WithHTTPClient(h *http.Client) Option {
-	return func(c *Client) { c.http = h }
+	return func(c *Client) { c.aac.HTTPClient = h }
 }
 
 // WithTimeout sets the HTTP client timeout. Overrides the default 5 min.
 // Use a context with a deadline for finer per-call control.
 func WithTimeout(d time.Duration) Option {
 	return func(c *Client) {
-		if c.http == nil {
-			c.http = &http.Client{}
+		if c.aac.HTTPClient == nil {
+			c.aac.HTTPClient = &http.Client{}
 		}
-		c.http.Timeout = d
+		c.aac.HTTPClient.Timeout = d
 	}
 }
 
@@ -90,9 +93,8 @@ func New(agentName string, opts ...Option) (*Client, error) {
 		return nil, fmt.Errorf("create agent identity: %w", err)
 	}
 	c := &Client{
-		addr:  addr,
-		agent: agent,
-		http:  &http.Client{Timeout: 5 * time.Minute},
+		aac: aauthclient.New("http://"+addr, agent),
+		pid: os.Getpid(),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -102,8 +104,8 @@ func New(agentName string, opts ...Option) (*Client, error) {
 
 // AgentID returns the AAuth-scheme agent identifier this client uses.
 // Format: "aauth:<name>@<hostname>". Useful for log lines and for
-// matching audit log entries.
-func (c *Client) AgentID() string { return c.agent.ID }
+// matching audit log entries on the broker side.
+func (c *Client) AgentID() string { return c.aac.Agent.ID }
 
 // RequestPermission is the underlying primitive: synchronously asks the
 // daemon to gate an action. Blocks until the user approves, denies, or
@@ -120,57 +122,38 @@ func (c *Client) AgentID() string { return c.agent.ID }
 // binary path, etc.). The interpretation is scope-dependent.
 //
 // Returns nil on approval. Returns ErrDenied on user denial or policy
-// auto-deny. Returns ErrDaemonUnreachable for transport failures.
+// auto-deny. Returns ErrUnauthorized if the broker rejected the agent
+// token. Returns ErrInvalidRequest for bad input (caught either side).
+// Returns ErrDaemonUnreachable for transport / signing failures.
 func (c *Client) RequestPermission(ctx context.Context, scope, target string) error {
 	if scope == "" || target == "" {
 		return fmt.Errorf("%w: scope and target are required", ErrInvalidRequest)
 	}
-	tok, err := c.agent.MintToken()
-	if err != nil {
-		return fmt.Errorf("mint agent token: %w", err)
-	}
-	body, _ := json.Marshal(struct {
-		Scope         string `json:"scope"`
-		Target        string `json:"target"`
-		Justification string `json:"justification,omitempty"`
-		PID           int    `json:"pid"`
-	}{
+	res, err := c.aac.RequestPermission(ctx, aauthclient.PermissionRequest{
 		Scope:  scope,
 		Target: target,
-		PID:    os.Getpid(),
+		PID:    c.pid,
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://"+c.addr+"/permission", bytes.NewReader(body))
 	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "AAuth "+tok)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
+		// Underlying client returns errors for network failures, agent-
+		// token minting, and RFC 9421 signing. All three mean "we couldn't
+		// get a verdict from the broker" — bundle as ErrDaemonUnreachable
+		// rather than expose three sentinels for the same caller decision.
 		return fmt.Errorf("%w: %v", ErrDaemonUnreachable, err)
 	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
+	if res.Approved {
 		return nil
+	}
+	switch res.StatusCode {
 	case http.StatusForbidden:
-		var body struct {
-			Reason string `json:"reason"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&body)
-		return fmt.Errorf("%w: %s", ErrDenied, body.Reason)
+		return fmt.Errorf("%w: %s", ErrDenied, res.Reason)
 	case http.StatusUnauthorized:
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%w: %s", ErrUnauthorized, string(b))
+		return fmt.Errorf("%w: %s", ErrUnauthorized, res.Reason)
 	case http.StatusBadRequest:
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%w: %s", ErrInvalidRequest, string(b))
+		return fmt.Errorf("%w: %s", ErrInvalidRequest, res.Reason)
 	default:
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected broker response %d: %s", resp.StatusCode, string(b))
+		return fmt.Errorf("unexpected broker response %d: %s — %s",
+			res.StatusCode, res.Error, res.Reason)
 	}
 }
 

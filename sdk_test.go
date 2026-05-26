@@ -29,11 +29,14 @@ type fakeBroker struct {
 }
 
 type recordedReq struct {
-	Method      string
-	Path        string
-	Auth        string
-	ContentType string
-	Body        map[string]any
+	Method         string
+	Path           string
+	SigKey         string // Signature-Key header — carries the agent JWT
+	SignatureInput string // RFC 9421 Signature-Input header
+	Signature      string // RFC 9421 Signature header
+	ContentDigest  string
+	ContentType    string
+	Body           map[string]any
 }
 
 func newFakeBroker(t *testing.T) *fakeBroker {
@@ -52,11 +55,14 @@ func newFakeBroker(t *testing.T) *fakeBroker {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
 		f.requests = append(f.requests, recordedReq{
-			Method:      r.Method,
-			Path:        r.URL.Path,
-			Auth:        r.Header.Get("Authorization"),
-			ContentType: r.Header.Get("Content-Type"),
-			Body:        body,
+			Method:         r.Method,
+			Path:           r.URL.Path,
+			SigKey:         r.Header.Get("Signature-Key"),
+			SignatureInput: r.Header.Get("Signature-Input"),
+			Signature:      r.Header.Get("Signature"),
+			ContentDigest:  r.Header.Get("Content-Digest"),
+			ContentType:    r.Header.Get("Content-Type"),
+			Body:           body,
 		})
 		respond := f.respond
 		f.mu.Unlock()
@@ -177,8 +183,20 @@ func TestRequestPermission_approves(t *testing.T) {
 	if r.ContentType != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", r.ContentType)
 	}
-	if !strings.HasPrefix(r.Auth, "AAuth ") {
-		t.Errorf("Authorization = %q, want AAuth prefix", r.Auth)
+	// AAuth wire protocol: agent token carried in Signature-Key, RFC 9421
+	// signature in Signature-Input + Signature, body integrity via
+	// Content-Digest.
+	if !strings.Contains(r.SigKey, "jwt=") {
+		t.Errorf("Signature-Key = %q, want sig=jwt; jwt=<token> shape", r.SigKey)
+	}
+	if r.SignatureInput == "" {
+		t.Errorf("Signature-Input header missing — RFC 9421 signing didn't run")
+	}
+	if r.Signature == "" {
+		t.Errorf("Signature header missing")
+	}
+	if r.ContentDigest == "" {
+		t.Errorf("Content-Digest header missing — body integrity not signed")
 	}
 	if got := r.Body["scope"]; got != "file.write" {
 		t.Errorf("body.scope = %v, want file.write", got)
@@ -194,21 +212,26 @@ func TestRequestPermission_approves(t *testing.T) {
 }
 
 func TestRequestPermission_signsTokenDifferentlyPerCall(t *testing.T) {
-	// Each MintToken() call uses a fresh iat/exp, so the Authorization
-	// header should differ between calls. Verifies the SDK isn't accidentally
-	// caching a single token across requests.
+	// Each MintToken() call uses a fresh iat/exp and the RFC 9421
+	// signature embeds a `created=<unix_seconds>` parameter, so the
+	// Signature-Key (which embeds the token) and the Signature should
+	// both differ between calls. Verifies the SDK isn't accidentally
+	// caching a single token / signature across requests.
 	f := newFakeBroker(t)
 	c := newClient(t, f)
 	ctx := context.Background()
 	_ = c.RequestPermission(ctx, "file.write", "/tmp/a")
-	time.Sleep(1100 * time.Millisecond) // ensure iat changes (JWT exp/iat are second-granularity)
+	time.Sleep(1100 * time.Millisecond) // iat + created are second-granularity
 	_ = c.RequestPermission(ctx, "file.write", "/tmp/b")
 	reqs := f.reqs()
 	if len(reqs) != 2 {
 		t.Fatalf("got %d requests, want 2", len(reqs))
 	}
-	if reqs[0].Auth == reqs[1].Auth {
-		t.Errorf("two calls sent identical Authorization header: %s", reqs[0].Auth)
+	if reqs[0].SigKey == reqs[1].SigKey {
+		t.Errorf("two calls sent identical Signature-Key (agent token cached?):\n%s", reqs[0].SigKey)
+	}
+	if reqs[0].Signature == reqs[1].Signature {
+		t.Errorf("two calls produced identical RFC 9421 Signature header")
 	}
 }
 
