@@ -1,6 +1,6 @@
 # interpose-sdk-go
 
-Cooperative-agent client for the [interpose](https://github.com/interposehq/interpose) daemon. Agents call `RequestPermission` (or one of the typed helpers) before performing a gated action; the daemon either auto-allows under policy, prompts the user for hardware-backed approval (passkey / YubiKey), or denies.
+Cooperative-agent client for the [interpose](https://github.com/interposed/interpose) daemon. Agents call `RequestPermission` (or one of the typed helpers) before performing a gated action; the daemon either auto-allows under policy, prompts the user for hardware-backed approval (passkey / YubiKey), or denies.
 
 This is the SDK an AI agent (or any process acting on behalf of a user) imports to participate in the cooperative path. Even without the SDK, the interpose kernel enforcer (LSM-BPF on Linux, EndpointSecurity on macOS soon) still blocks unauthorized actions — but cooperative agents get a much nicer UX because they ask first rather than getting `EPERM` after the fact.
 
@@ -10,27 +10,11 @@ This is the SDK an AI agent (or any process acting on behalf of a user) imports 
 
 Go 1.25 or later.
 
-> **Private-repo phase.** Both `interposehq/interpose` and `interposehq/interpose-sdk-go` are currently private. `go get` will 404 without auth. Two ways to use the SDK today:
->
-> **Option A — local sibling layout** (recommended for iteration on both repos)
->
-> ```
-> ~/your-dev-dir/
-> ├── interpose/            # git clone git@github.com:interposehq/interpose
-> └── interpose-sdk-go/     # git clone git@github.com:interposehq/interpose-sdk-go
-> ```
->
-> The SDK's `go.mod` has a `replace github.com/interposehq/interpose => ../interpose` directive that makes this layout work out of the box — no auth config needed.
->
-> **Option B — authenticated `go get`**
->
-> ```bash
-> export GOPRIVATE=github.com/interposehq/*
-> # ensure git can pull private interposehq repos (SSH or PAT in ~/.netrc)
-> go get github.com/interposehq/interpose-sdk-go
-> ```
->
-> Remove the `replace` directive from your local `go.mod` to use Option B.
+```bash
+go get github.com/interposed/interpose-sdk-go
+```
+
+> **Note:** The SDK currently imports AAuth primitives from `interposed/interpose`, which is still a private repo. External users will not be able to `go build` until those primitives are relocated into this SDK (planned). For local development against both repos, clone them as siblings — the SDK's `go.mod` has a `replace` directive that picks up your local `interpose` checkout automatically.
 
 ---
 
@@ -43,7 +27,7 @@ import (
     "context"
     "log"
 
-    interpose "github.com/interposehq/interpose-sdk-go"
+    interpose "github.com/interposed/interpose-sdk-go"
 )
 
 func main() {
@@ -144,8 +128,8 @@ Approvals have a default TTL (60 s in v0.8). For long-running operations, ask on
 
 ## See also
 
-- [interpose](https://github.com/interposehq/interpose) — the daemon this SDK talks to
-- [`docs/security.md`](https://github.com/interposehq/interpose/blob/main/docs/security.md) — what the kernel enforcer actually blocks
+- [interpose](https://github.com/interposed/interpose) — the daemon this SDK talks to
+- [`docs/security.md`](https://github.com/interposed/interpose/blob/main/docs/security.md) — what the kernel enforcer actually blocks
 - [AAuth draft](https://github.com/dickhardt/aauth) — the protocol the SDK implements
 
 ---

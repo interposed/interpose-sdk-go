@@ -1,8 +1,8 @@
-module github.com/interposehq/interpose-sdk-go
+module github.com/interposed/interpose-sdk-go
 
 go 1.25.0
 
-require github.com/interposehq/interpose v0.8.2
+require github.com/interposed/interpose v0.8.2
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
@@ -27,11 +27,9 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 )
 
-// While both interposehq/interpose and interposehq/interpose-sdk-go are
-// private GitHub repos, `go get` of the interpose dep below will 404
-// without GitHub auth + GOPRIVATE=github.com/interposehq/*. The replace
-// directive points at a local checkout so the SDK builds out of the box
-// for anyone who has both repos cloned as siblings (the documented
-// layout in README.md). Remove this directive when the repos go public
-// or when a private Go module proxy is in place.
-replace github.com/interposehq/interpose => ../interpose
+// The SDK is public but its interposed/interpose dependency is still
+// private — pkg/aauth/* in interpose will be relocated into this SDK
+// so it builds for external consumers. Until then, this replace
+// directive lets contributors build the SDK locally when both repos
+// are cloned as siblings (see README.md).
+replace github.com/interposed/interpose => ../interpose

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	interpose "github.com/interposehq/interpose-sdk-go"
+	interpose "github.com/interposed/interpose-sdk-go"
 )
 
 // TestE2E_CooperativePath exercises the SDK end-to-end against a real

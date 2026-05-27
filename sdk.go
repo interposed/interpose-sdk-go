@@ -20,8 +20,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/interposehq/interpose/pkg/aauth"
-	aauthclient "github.com/interposehq/interpose/pkg/aauth/client"
+	"github.com/interposed/interpose/pkg/aauth"
+	aauthclient "github.com/interposed/interpose/pkg/aauth/client"
 )
 
 // DefaultAddr is the address the SDK connects to when neither WithAddr

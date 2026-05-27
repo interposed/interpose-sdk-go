@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	interpose "github.com/interposehq/interpose-sdk-go"
+	interpose "github.com/interposed/interpose-sdk-go"
 )
 
 // fakeBroker is an httptest.Server with a recorded request log and a

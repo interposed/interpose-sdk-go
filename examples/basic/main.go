@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	interpose "github.com/interposehq/interpose-sdk-go"
+	interpose "github.com/interposed/interpose-sdk-go"
 )
 
 func main() {
