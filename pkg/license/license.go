@@ -22,10 +22,10 @@ const SchemaVersion = 1
 type Tier string
 
 const (
-	TierTrial   Tier = "trial"
-	TierStudent Tier = "student"
-	TierYearly  Tier = "yearly"
-	TierForever Tier = "forever"
+	TierTrial    Tier = "trial"
+	TierAcademic Tier = "academic"
+	TierYearly   Tier = "yearly"
+	TierForever  Tier = "forever"
 )
 
 // License is the inner, signed payload.
