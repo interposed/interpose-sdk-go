@@ -22,6 +22,10 @@ const SchemaVersion = 1
 type Tier string
 
 const (
+	// Free: the register-only, never-expiring tier. Unlocks the Instant/nono
+	// kernel sandbox only; governance, Sealed/Ambient, and teams are upgrades.
+	TierFree Tier = "free"
+
 	TierTrial    Tier = "trial"
 	TierAcademic Tier = "academic"
 	TierYearly   Tier = "yearly"
