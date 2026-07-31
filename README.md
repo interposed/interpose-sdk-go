@@ -1,5 +1,7 @@
 # interpose-sdk-go
 
+[![govulncheck](https://github.com/interposed/interpose-sdk-go/actions/workflows/govulncheck.yml/badge.svg)](https://github.com/interposed/interpose-sdk-go/actions/workflows/govulncheck.yml)
+
 Cooperative-agent client for the [interpose](https://github.com/interposed/interpose) daemon. Agents call `RequestPermission` (or one of the typed helpers) before performing a gated action; the daemon either auto-allows under policy, prompts the user for hardware-backed approval (passkey / YubiKey), or denies.
 
 This is the SDK an AI agent (or any process acting on behalf of a user) imports to participate in the cooperative path. Even without the SDK, the interpose kernel enforcer (LSM-BPF on Linux, EndpointSecurity on macOS soon) still blocks unauthorized actions — but cooperative agents get a much nicer UX because they ask first rather than getting `EPERM` after the fact.
